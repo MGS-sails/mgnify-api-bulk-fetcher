@@ -2,14 +2,13 @@ import requests
 import pandas as pd
 import time
 import os
-import json
 from tqdm import tqdm
 
 # Configuration
 BASE_URL = "https://www.ebi.ac.uk/metagenomics/api/v1/samples"
-CSV_OUTPUT_FILE = "output_data.csv"
-JSON_OUTPUT_FILE = "output_data.json"
+OUTPUT_FILE = "output_data.csv"
 TOTAL_PAGES = 17007
+
 
 # Function to fetch data from a specific page
 def fetch_page_data(page):
@@ -17,30 +16,20 @@ def fetch_page_data(page):
     response.raise_for_status()
     return response.json()['data']
 
+
 # Load last fetched page (if exists)
 start_page = 1
 if os.path.exists("progress_tracker.txt"):
     with open("progress_tracker.txt", "r") as f:
-        last_page = f.read().strip()
-        if last_page:
-            start_page = int(last_page) + 1
+        start_page = int(f.read().strip()) + 1
 
-# Load or create the CSV file
-if os.path.exists(CSV_OUTPUT_FILE) and start_page > 1:
-    # Load existing CSV data
-    data_df = pd.read_csv(CSV_OUTPUT_FILE)
+# Create or load the CSV file
+if os.path.exists(OUTPUT_FILE) and start_page > 1:
+    # Load the existing CSV file
+    data_df = pd.read_csv(OUTPUT_FILE)
 else:
-    # Create a new CSV with column headers
+    # Create a new CSV file with column names
     data_df = pd.DataFrame(columns=["id", "attributes", "relationships"])
-
-# Load or initialize JSON data
-if os.path.exists(JSON_OUTPUT_FILE) and start_page > 1:
-    # Load existing JSON data
-    with open(JSON_OUTPUT_FILE, "r") as json_file:
-        json_data = json.load(json_file)
-else:
-    # Start with an empty list if no JSON file exists
-    json_data = []
 
 # Progress bar setup
 progress_bar = tqdm(total=TOTAL_PAGES, initial=start_page - 1, desc="Fetching data")
@@ -48,18 +37,13 @@ progress_bar = tqdm(total=TOTAL_PAGES, initial=start_page - 1, desc="Fetching da
 # Fetch data from each page
 for page in range(start_page, TOTAL_PAGES + 1):
     try:
-        # Fetch data for the current page
+        # Fetch and store data for the current page
         data = fetch_page_data(page)
         temp_df = pd.json_normalize(data)
 
-        # Append to DataFrame for CSV
+        # Append data to main dataframe and save
         data_df = pd.concat([data_df, temp_df], ignore_index=True)
-        data_df.to_csv(CSV_OUTPUT_FILE, index=False)
-
-        # Append to list for JSON
-        json_data.extend(data)
-        with open(JSON_OUTPUT_FILE, "w") as json_file:
-            json.dump(json_data, json_file, indent=2)
+        data_df.to_csv(OUTPUT_FILE, index=False)
 
         # Save current progress
         with open("progress_tracker.txt", "w") as f:
