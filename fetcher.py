@@ -5,10 +5,9 @@ import os
 from tqdm import tqdm
 
 # Configuration
-BASE_URL = "https://www.ebi.ac.uk/metagenomics/api/v1/samples"
-OUTPUT_FILE = "output_data.csv"
-TOTAL_PAGES = 17007
-
+BASE_URL = "https://www.ebi.ac.uk/metagenomics/api/v1/samples?experiment_type=assembly&page_size=1"
+CSV_OUTPUT_FILE = "output_data.csv"
+TOTAL_PAGES = 361
 
 # Function to fetch data from a specific page
 def fetch_page_data(page):
@@ -16,20 +15,17 @@ def fetch_page_data(page):
     response.raise_for_status()
     return response.json()['data']
 
-
 # Load last fetched page (if exists)
 start_page = 1
 if os.path.exists("progress_tracker.txt"):
     with open("progress_tracker.txt", "r") as f:
-        start_page = int(f.read().strip()) + 1
+        last_page = f.read().strip()
+        if last_page:
+            start_page = int(last_page) + 1
 
-# Create or load the CSV file
-if os.path.exists(OUTPUT_FILE) and start_page > 1:
-    # Load the existing CSV file
-    data_df = pd.read_csv(OUTPUT_FILE)
-else:
-    # Create a new CSV file with column names
-    data_df = pd.DataFrame(columns=["id", "attributes", "relationships"])
+# Initialize CSV headers and data storage
+columns = ["id"]
+data_list = []
 
 # Progress bar setup
 progress_bar = tqdm(total=TOTAL_PAGES, initial=start_page - 1, desc="Fetching data")
@@ -37,13 +33,35 @@ progress_bar = tqdm(total=TOTAL_PAGES, initial=start_page - 1, desc="Fetching da
 # Fetch data from each page
 for page in range(start_page, TOTAL_PAGES + 1):
     try:
-        # Fetch and store data for the current page
+        # Fetch data for the current page
         data = fetch_page_data(page)
-        temp_df = pd.json_normalize(data)
 
-        # Append data to main dataframe and save
-        data_df = pd.concat([data_df, temp_df], ignore_index=True)
-        data_df.to_csv(OUTPUT_FILE, index=False)
+        # Process each sample in the data
+        for sample in data:
+            sample_id = sample.get("id")
+            metadata = sample["attributes"].get("sample-metadata", [])
+
+            # Prepare a dictionary for the row data
+            row_data = {"id": sample_id}
+
+            # Extract sample-metadata as columns dynamically
+            for item in metadata:
+                key = item["key"]
+                value = item["value"]
+
+                # Add column if it's new
+                if key not in columns:
+                    columns.append(key)
+
+                # Add data to row
+                row_data[key] = value
+
+            # Append row data to list
+            data_list.append(row_data)
+
+        # Convert to DataFrame and save CSV after each page
+        data_df = pd.DataFrame(data_list, columns=columns)
+        data_df.to_csv(CSV_OUTPUT_FILE, index=False)
 
         # Save current progress
         with open("progress_tracker.txt", "w") as f:
